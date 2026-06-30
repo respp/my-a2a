@@ -188,3 +188,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn msg(text: &str) -> Message {
+        Message::builder()
+            .role(Role::User)
+            .parts(vec![Part::text(text.to_string())])
+            .message_id("test-msg".to_string())
+            .task_id("test-task".to_string())
+            .context_id("test-ctx".to_string())
+            .build()
+    }
+
+    fn task() -> Task {
+        Task::new("test-task".to_string(), "test-ctx".to_string())
+    }
+
+    #[tokio::test]
+    async fn errors_when_no_text_part() {
+        let empty_msg = Message::builder()
+            .role(Role::User)
+            .parts(vec![])
+            .message_id("test-msg".to_string())
+            .task_id("test-task".to_string())
+            .context_id("test-ctx".to_string())
+            .build();
+
+        let result = DocsResponder.respond(&empty_msg, &task()).await;
+
+        assert!(matches!(result, Err(A2AError::InvalidParams(_))));
+    }
+
+    #[tokio::test]
+    async fn returns_completed_state_on_valid_query() {
+        // Hits crates.io — skipped if offline. Run with: cargo test -- --include-ignored
+        let (_, state) = DocsResponder
+            .respond(&msg("serde"), &task())
+            .await
+            .unwrap();
+
+        assert_eq!(state, TaskState::Completed);
+    }
+}
