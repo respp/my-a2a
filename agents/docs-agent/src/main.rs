@@ -29,12 +29,28 @@ struct Crate {
     downloads:     u64,
 }
 
-// ── crates.io search ─────────────────────────────────────────────────────────
+// ── Search trait — lets tests inject a fake without hitting the network ───────
+
+#[async_trait]
+trait CrateSearch: Send + Sync {
+    async fn search(&self, query: &str) -> Result<String, String>;
+}
+
+// ── Real implementation that calls crates.io ─────────────────────────────────
+
+struct LiveCrateSearch;
+
+#[async_trait]
+impl CrateSearch for LiveCrateSearch {
+    async fn search(&self, query: &str) -> Result<String, String> {
+        search_crates(query).await.map_err(|e| e.to_string())
+    }
+}
 
 async fn search_crates(query: &str) -> Result<String, reqwest::Error> {
     // crates.io requires a descriptive User-Agent or returns 403
     let client = reqwest::Client::builder()
-        .user_agent("my-a2a-demo/0.1.0 (github.com/example/my-a2a-demo)")
+        .user_agent("my-a2a-demo/0.1.0 (github.com/respp/my-a2a)")
         .build()?;
 
     let resp: CratesResponse = client
@@ -79,10 +95,12 @@ fn fmt_downloads(n: u64) -> String {
 
 // ── Responder ────────────────────────────────────────────────────────────────
 
-struct DocsResponder;
+struct DocsResponder<S> {
+    search: S,
+}
 
 #[async_trait]
-impl Responder for DocsResponder {
+impl<S: CrateSearch> Responder for DocsResponder<S> {
     async fn respond(
         &self,
         message: &Message,
@@ -101,7 +119,8 @@ impl Responder for DocsResponder {
 
         tracing::info!(query, "searching crates.io");
 
-        let result = search_crates(query)
+        let result = self.search
+            .search(query)
             .await
             .unwrap_or_else(|e| format!("Error contacting crates.io: {e}"));
 
@@ -137,7 +156,7 @@ impl AsyncMessageHandler for DocsMessageHandler {
             self.storage.clone(),
             self.streaming.clone(),
             self.storage.push_notifier(),
-            DocsResponder,
+            DocsResponder { search: LiveCrateSearch },
         )
         .process_message(task_id, message, session_id)
         .await
@@ -195,6 +214,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
 
+    struct FakeCrateSearch {
+        result: &'static str,
+    }
+
+    #[async_trait]
+    impl CrateSearch for FakeCrateSearch {
+        async fn search(&self, _query: &str) -> Result<String, String> {
+            Ok(self.result.to_string())
+        }
+    }
+
+    fn responder() -> DocsResponder<FakeCrateSearch> {
+        DocsResponder {
+            search: FakeCrateSearch {
+                result: "📦 fake-crate v1.0.0\n   A fake crate for testing.\n",
+            },
+        }
+    }
+
     fn msg(text: &str) -> Message {
         Message::builder()
             .role(Role::User)
@@ -219,19 +257,34 @@ mod tests {
             .context_id("test-ctx".to_string())
             .build();
 
-        let result = DocsResponder.respond(&empty_msg, &task()).await;
+        let result = responder().respond(&empty_msg, &task()).await;
 
         assert!(matches!(result, Err(A2AError::InvalidParams(_))));
     }
 
     #[tokio::test]
-    async fn returns_completed_state_on_valid_query() {
-        // Hits crates.io — skipped if offline. Run with: cargo test -- --include-ignored
-        let (_, state) = DocsResponder
-            .respond(&msg("serde"), &task())
-            .await
-            .unwrap();
+    async fn returns_completed_with_search_result() {
+        let (reply, state) = responder().respond(&msg("tokio"), &task()).await.unwrap();
 
         assert_eq!(state, TaskState::Completed);
+        let text = reply.parts.iter().find_map(|p| p.get_text()).unwrap();
+        assert!(text.contains("fake-crate"));
+    }
+
+    #[tokio::test]
+    async fn passes_query_to_search() {
+        struct CapturingSearch;
+
+        #[async_trait]
+        impl CrateSearch for CapturingSearch {
+            async fn search(&self, query: &str) -> Result<String, String> {
+                Ok(format!("query was: {query}"))
+            }
+        }
+
+        let r = DocsResponder { search: CapturingSearch };
+        let (reply, _) = r.respond(&msg("serde"), &task()).await.unwrap();
+        let text = reply.parts.iter().find_map(|p| p.get_text()).unwrap();
+        assert_eq!(text, "query was: serde");
     }
 }
