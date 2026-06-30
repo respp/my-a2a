@@ -72,12 +72,12 @@ Only the `Responder` layer contains custom code. The rest is provided by `EmilLi
 
 ```bash
 cargo test -p file-agent    # 3 unit tests, no server needed
-cargo test -p docs-agent    # 2 tests (1 hits crates.io)
+cargo test -p docs-agent    # 3 unit tests, no network needed
 ```
 
 The `file-agent` tests exercise `FileResponder` directly — no HTTP server, no Axum, just the business logic function. They cover: reading a file successfully, missing file (IO error), and empty message (invalid params).
 
-The `docs-agent` has one offline test (empty message → error) and one that hits crates.io live.
+The `docs-agent` injects `CrateSearch` as a trait so tests use a `FakeCrateSearch` — no real HTTP calls. Tests cover: empty message (invalid params), successful search result, and query passthrough verification.
 
 ## Wire compatibility with a2aproject/a2a-rs
 
