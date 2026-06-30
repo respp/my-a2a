@@ -1,0 +1,16 @@
+[package]
+name    = "a2a-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# jsonrpc-client: JsonRpcClient + connect() + Transport trait
+# TODO (experimento 1 — wire compat): cambiar a a2a-client de a2aproject/a2a-rs
+#      para verificar si su cliente JSON-RPC es wire-compatible con EmilLindfors server.
+#      Cambios necesarios:
+#        a2a-client = { git = "https://github.com/a2aproject/a2a-rs", package = "a2a-client-lf" }
+#        a2a-types  = { git = "https://github.com/a2aproject/a2a-rs", package = "a2a-lf" }
+a2a-rs = { workspace = true, features = ["jsonrpc-client"] }
+
+tokio = { workspace = true }
+uuid  = { workspace = true }
