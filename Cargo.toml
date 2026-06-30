@@ -1,0 +1,23 @@
+[workspace]
+members = [
+    "agents/file-agent",
+    "agents/docs-agent",
+    "cli",
+]
+resolver = "2"
+
+[workspace.dependencies]
+# EmilLindfors a2a-rs: protocolo A2A, servidor JSON-RPC 2.0 + dominio protobuf
+# Usamos features separados por crate:
+#   jsonrpc-server → para los agentes (HTTP server + Axum)
+#   jsonrpc-client → para la CLI (JsonRpcClient)
+a2a-rs  = { git = "https://github.com/EmilLindfors/a2a-rs" }
+axum    = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde   = { version = "1.0", features = ["derive"] }
+
+tokio              = { version = "1",   features = ["full"] }
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid               = { version = "1",   features = ["v4"] }
+async-trait        = "0.1"
