@@ -142,3 +142,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn msg(text: &str) -> Message {
+        Message::builder()
+            .role(Role::User)
+            .parts(vec![Part::text(text.to_string())])
+            .message_id("test-msg".to_string())
+            .task_id("test-task".to_string())
+            .context_id("test-ctx".to_string())
+            .build()
+    }
+
+    fn task() -> Task {
+        Task::new("test-task".to_string(), "test-ctx".to_string())
+    }
+
+    #[tokio::test]
+    async fn reads_file_and_returns_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hello.txt");
+        std::fs::write(&path, "hola mundo").unwrap();
+
+        let (reply, state) = FileResponder
+            .respond(&msg(path.to_str().unwrap()), &task())
+            .await
+            .unwrap();
+
+        assert_eq!(state, TaskState::Completed);
+        let text = reply.parts.iter().find_map(|p| p.get_text()).unwrap();
+        assert_eq!(text, "hola mundo");
+    }
+
+    #[tokio::test]
+    async fn errors_when_file_not_found() {
+        let result = FileResponder
+            .respond(&msg("/tmp/this-does-not-exist-xyz.txt"), &task())
+            .await;
+
+        assert!(matches!(result, Err(A2AError::Io(_))));
+    }
+
+    #[tokio::test]
+    async fn errors_when_no_text_part() {
+        let empty_msg = Message::builder()
+            .role(Role::User)
+            .parts(vec![])
+            .message_id("test-msg".to_string())
+            .task_id("test-task".to_string())
+            .context_id("test-ctx".to_string())
+            .build();
+
+        let result = FileResponder.respond(&empty_msg, &task()).await;
+
+        assert!(matches!(result, Err(A2AError::InvalidParams(_))));
+    }
+}
