@@ -1,0 +1,15 @@
+[package]
+name    = "file-agent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# jsonrpc-server habilita: JsonRpcAdapter, jsonrpc_router, rest_router (vía Axum)
+a2a-rs = { workspace = true, features = ["jsonrpc-server"] }
+axum   = { workspace = true }
+
+tokio              = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid               = { workspace = true }
+async-trait        = { workspace = true }
