@@ -1,20 +1,14 @@
 use std::sync::Arc;
-
 use async_trait::async_trait;
-
 use a2a_rs::{
     AsyncMessageHandler, InMemoryStreamingHandler, InMemoryTaskStorage,
     A2AError, Message, Part, Role, Task, TaskState,
 };
-use a2a_rs::adapter::{
-    SimpleAgentInfo,
-    JsonRpcAdapter, jsonrpc_router, rest_router,
-};
+use a2a_rs::adapter::{SimpleAgentInfo, JsonRpcAdapter, jsonrpc_router, rest_router};
 use a2a_rs::adapter::business::{Responder, ResponderMessageHandler};
 
-// ── Lógica de negocio ────────────────────────────────────────────────────────
+// ── Responder ────────────────────────────────────────────────────────────────
 
-// FileResponder: recibe el mensaje del usuario y devuelve el contenido del archivo
 struct FileResponder;
 
 #[async_trait]
@@ -24,22 +18,20 @@ impl Responder for FileResponder {
         message: &Message,
         task: &Task,
     ) -> Result<(Message, TaskState), A2AError> {
-        // El primer part de texto contiene el path del archivo
         let path = message
             .parts
             .iter()
             .find_map(|p| p.get_text())
             .map(str::trim)
-            .ok_or_else(|| A2AError::InvalidParams(
-                "El mensaje debe contener el path del archivo como text part".into(),
-            ))?;
+            .ok_or_else(|| {
+                A2AError::InvalidParams(
+                    "Message must contain the file path as a text part".into(),
+                )
+            })?;
 
-        tracing::info!(path, "leyendo archivo");
+        tracing::info!(path, "reading file");
 
-        // A2AError implementa From<std::io::Error>, así que ? funciona directo
         let content = tokio::fs::read_to_string(path).await?;
-
-        tracing::info!(path, bytes = content.len(), "archivo leído");
 
         let reply = Message::builder()
             .role(Role::Agent)
@@ -53,9 +45,8 @@ impl Responder for FileResponder {
     }
 }
 
-// ── Handler del agente ───────────────────────────────────────────────────────
+// ── Handler and server ───────────────────────────────────────────────────────
 
-// FileMessageHandler coordina el ciclo de vida del task + delega a FileResponder
 #[derive(Clone)]
 struct FileMessageHandler {
     storage:   InMemoryTaskStorage,
@@ -70,12 +61,6 @@ impl AsyncMessageHandler for FileMessageHandler {
         message: &Message,
         session_id: Option<&str>,
     ) -> Result<Task, A2AError> {
-        // ResponderMessageHandler maneja:
-        //   1. create() del task en storage
-        //   2. update_status(Working)
-        //   3. llama a FileResponder::respond()
-        //   4. update_status(Completed) con la respuesta
-        //   5. broadcast a suscriptores SSE
         ResponderMessageHandler::new(
             self.storage.clone(),
             self.streaming.clone(),
@@ -87,8 +72,6 @@ impl AsyncMessageHandler for FileMessageHandler {
     }
 }
 
-// ── Bootstrap del servidor ───────────────────────────────────────────────────
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -99,45 +82,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let port = 8080u16;
-    let addr = format!("0.0.0.0:{port}");
-    let base = format!("http://localhost:{port}");
-
-    // Storage compartido: todos los clones apuntan al mismo Arc interno
     let storage   = InMemoryTaskStorage::new();
     let streaming = InMemoryStreamingHandler::new();
 
-    let agent_info = SimpleAgentInfo::new("file-agent".to_string(), base.clone())
-        .with_description("Lee archivos locales y devuelve su contenido".to_string())
-        .with_version("0.1.0".to_string());
+    let agent_info = SimpleAgentInfo::new(
+        "file-agent".to_string(),
+        format!("http://localhost:{port}"),
+    )
+    .with_description("Reads local files and returns their content".to_string())
+    .with_version("0.1.0".to_string());
 
-    let file_handler = FileMessageHandler {
+    let handler = FileMessageHandler {
         storage:   storage.clone(),
         streaming: streaming.clone(),
     };
 
-    // JsonRpcAdapter::new separa:
-    //   - message_handler  → process_message (lógica de negocio)
-    //   - tasks            → GetTask, CancelTask, ListTasks
-    //   - notification_mgr → push config endpoints
     let adapter = Arc::new(
-        JsonRpcAdapter::new(
-            file_handler,
-            storage.clone(),  // AsyncTaskLifecycle + AsyncTaskQuery
-            storage.clone(),  // AsyncNotificationManager
-            agent_info,
-        )
-        .with_streaming_handler(streaming)            // habilita SSE
-        .with_push_notifier(storage.push_notifier()), // habilita push notifications
+        JsonRpcAdapter::new(handler, storage.clone(), storage.clone(), agent_info)
+            .with_streaming_handler(streaming)
+            .with_push_notifier(storage.push_notifier()),
     );
 
-    let app = jsonrpc_router(adapter.clone())
-        .merge(rest_router(adapter));
+    let app = jsonrpc_router(adapter.clone()).merge(rest_router(adapter));
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
 
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("file-agent escuchando en http://localhost:{port}");
-    tracing::info!("  JSON-RPC:   POST http://localhost:{port}/");
-    tracing::info!("  Agent card: GET  http://localhost:{port}/.well-known/agent-card.json");
-
+    tracing::info!("file-agent listening on http://localhost:{port}");
     axum::serve(listener, app).await?;
 
     Ok(())
@@ -167,7 +136,7 @@ mod tests {
     async fn reads_file_and_returns_content() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("hello.txt");
-        std::fs::write(&path, "hola mundo").unwrap();
+        std::fs::write(&path, "hello from test").unwrap();
 
         let (reply, state) = FileResponder
             .respond(&msg(path.to_str().unwrap()), &task())
@@ -176,7 +145,7 @@ mod tests {
 
         assert_eq!(state, TaskState::Completed);
         let text = reply.parts.iter().find_map(|p| p.get_text()).unwrap();
-        assert_eq!(text, "hola mundo");
+        assert_eq!(text, "hello from test");
     }
 
     #[tokio::test]

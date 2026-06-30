@@ -7,10 +7,10 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-# EmilLindfors a2a-rs: protocolo A2A, servidor JSON-RPC 2.0 + dominio protobuf
-# Usamos features separados por crate:
-#   jsonrpc-server → para los agentes (HTTP server + Axum)
-#   jsonrpc-client → para la CLI (JsonRpcClient)
+# EmilLindfors a2a-rs: A2A protocol, JSON-RPC 2.0 server + protobuf domain types
+# Features are selected per crate:
+#   jsonrpc-server → agents (HTTP server + Axum)
+#   jsonrpc-client → CLI (JsonRpcClient)
 a2a-rs  = { git = "https://github.com/EmilLindfors/a2a-rs" }
 axum    = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

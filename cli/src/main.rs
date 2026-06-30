@@ -4,46 +4,44 @@ use a2a_rs::Message;
 const FILE_AGENT: &str = "http://localhost:8080";
 const DOCS_AGENT: &str = "http://localhost:8081";
 
-/// Decide a qué agente mandar la tarea según cómo se ve el input.
+/// Routes a task to the correct agent based on the CLI arguments.
 ///
-/// Reglas, en orden:
-///   1. Flags explícitos (--file, --docs, --agent <url>) → siempre ganan
-///   2. Empieza con `/`, `./` o `~/`                     → file-agent
-///   3. Es un path que existe en disco                   → file-agent
-///   4. Cualquier otra cosa                              → docs-agent
+/// Priority order:
+///   1. Explicit flags (--file, --docs, --agent <url>) always win
+///   2. Starts with `/`, `./`, or `~/`  → file-agent
+///   3. Path exists on disk             → file-agent
+///   4. Anything else                   → docs-agent
 fn route(args: &[String]) -> Result<(String, String), String> {
     match args {
-        // Flags explícitos
+        // Explicit flags
         [_, flag, text] if flag == "--file"  => Ok((FILE_AGENT.into(), text.clone())),
         [_, flag, text] if flag == "--docs"  => Ok((DOCS_AGENT.into(), text.clone())),
         [_, flag, url, text] if flag == "--agent" => Ok((url.clone(), text.clone())),
 
-        // Un solo argumento: autodispatch
+        // Single argument: auto-dispatch
         [_, text] => Ok((autodetect(text), text.clone())),
 
         _ => Err(
-            "Uso:\n  \
-             a2a-cli <input>               → despacha automáticamente\n  \
-             a2a-cli --file  <path>        → file-agent en :8080\n  \
-             a2a-cli --docs  <crate>       → docs-agent en :8081\n  \
-             a2a-cli --agent <url> <texto> → agente arbitrario\n\n\
-             Ejemplos:\n  \
-             a2a-cli Cargo.toml            → lee el archivo\n  \
-             a2a-cli /etc/hosts            → lee el archivo\n  \
-             a2a-cli tokio                 → busca en crates.io\n  \
-             a2a-cli serde async           → busca en crates.io"
+            "Usage:\n  \
+             a2a-cli <input>               → auto-dispatch\n  \
+             a2a-cli --file  <path>        → file-agent on :8080\n  \
+             a2a-cli --docs  <crate>       → docs-agent on :8081\n  \
+             a2a-cli --agent <url> <text>  → arbitrary agent\n\n\
+             Examples:\n  \
+             a2a-cli Cargo.toml            → reads the file\n  \
+             a2a-cli /etc/hosts            → reads the file\n  \
+             a2a-cli tokio                 → searches crates.io\n  \
+             a2a-cli serde async           → searches crates.io"
             .into()
         ),
     }
 }
 
 fn autodetect(input: &str) -> String {
-    // Parece un path si empieza con separadores de directorio
     let looks_like_path = input.starts_with('/')
         || input.starts_with("./")
         || input.starts_with("~/");
 
-    // O si el archivo realmente existe en disco
     let exists_on_disk = std::path::Path::new(input).exists();
 
     if looks_like_path || exists_on_disk {
@@ -82,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let task = client
         .send_task_message(&task_id, &message, None, None)
         .await
-        .map_err(|e| format!("Error contactando {agent_url}: {e}"))?;
+        .map_err(|e| format!("Error contacting {agent_url}: {e}"))?;
 
     let response_text = task
         .status
@@ -97,8 +95,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .status
                 .as_option()
                 .map(|s| format!("{:?}", s.state))
-                .unwrap_or_else(|| "desconocido".into());
-            eprintln!("Sin respuesta de texto. Estado: {state}");
+                .unwrap_or_else(|| "unknown".into());
+            eprintln!("No text in response. Task state: {state}");
         }
     }
 

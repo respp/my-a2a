@@ -13,7 +13,7 @@ use a2a_rs::adapter::{
 };
 use a2a_rs::adapter::business::{Responder, ResponderMessageHandler};
 
-// ── Tipos para deserializar la respuesta de crates.io ───────────────────────
+// ── Types for deserializing the crates.io response ──────────────────────────
 
 #[derive(Deserialize)]
 struct CratesResponse {
@@ -29,10 +29,10 @@ struct Crate {
     downloads:     u64,
 }
 
-// ── Búsqueda en crates.io ────────────────────────────────────────────────────
+// ── crates.io search ─────────────────────────────────────────────────────────
 
 async fn search_crates(query: &str) -> Result<String, reqwest::Error> {
-    // crates.io requiere User-Agent descriptivo o devuelve 403
+    // crates.io requires a descriptive User-Agent or returns 403
     let client = reqwest::Client::builder()
         .user_agent("my-a2a-demo/0.1.0 (github.com/example/my-a2a-demo)")
         .build()?;
@@ -46,10 +46,10 @@ async fn search_crates(query: &str) -> Result<String, reqwest::Error> {
         .await?;
 
     if resp.crates.is_empty() {
-        return Ok(format!("No se encontraron crates para '{query}'."));
+        return Ok(format!("No crates found for '{query}'."));
     }
 
-    let mut out = format!("Resultados para '{query}' en crates.io:\n\n");
+    let mut out = format!("Results for '{query}' on crates.io:\n\n");
 
     for c in &resp.crates {
         out.push_str(&format!("📦 {} v{}\n", c.name, c.max_version));
@@ -62,7 +62,7 @@ async fn search_crates(query: &str) -> Result<String, reqwest::Error> {
             out.push_str(&format!("   docs: {docs}\n"));
         }
 
-        out.push_str(&format!("   {} descargas totales\n\n", fmt_downloads(c.downloads)));
+        out.push_str(&format!("   {} total downloads\n\n", fmt_downloads(c.downloads)));
     }
 
     Ok(out)
@@ -95,15 +95,15 @@ impl Responder for DocsResponder {
             .map(str::trim)
             .ok_or_else(|| {
                 A2AError::InvalidParams(
-                    "El mensaje debe contener el nombre del crate a buscar".into(),
+                    "Message must contain the crate name to search as a text part".into(),
                 )
             })?;
 
-        tracing::info!(query, "buscando en crates.io");
+        tracing::info!(query, "searching crates.io");
 
         let result = search_crates(query)
             .await
-            .unwrap_or_else(|e| format!("Error al contactar crates.io: {e}"));
+            .unwrap_or_else(|e| format!("Error contacting crates.io: {e}"));
 
         let reply = Message::builder()
             .role(Role::Agent)
@@ -117,7 +117,7 @@ impl Responder for DocsResponder {
     }
 }
 
-// ── Handler y servidor ───────────────────────────────────────────────────────
+// ── Handler and server ───────────────────────────────────────────────────────
 
 #[derive(Clone)]
 struct DocsMessageHandler {
@@ -161,7 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let streaming = InMemoryStreamingHandler::new();
 
     let agent_info = SimpleAgentInfo::new("docs-agent".to_string(), base)
-        .with_description("Busca crates en crates.io y documentación en docs.rs".to_string())
+        .with_description("Searches crates on crates.io and documentation on docs.rs".to_string())
         .with_version("0.1.0".to_string());
 
     let handler = DocsMessageHandler {
@@ -183,7 +183,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = jsonrpc_router(adapter.clone()).merge(rest_router(adapter));
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    tracing::info!("docs-agent escuchando en http://localhost:{port}");
+    tracing::info!("docs-agent listening on http://localhost:{port}");
     axum::serve(listener, app).await?;
 
     Ok(())
